@@ -3,48 +3,26 @@ const app = express();
 const morgan = require("morgan");
 const port = process.env.PORT || 8080;
 const cors = require("cors");
-const {join} = require("path");
-
-let phoneNumbers = [
-    { 
-      id: 1,
-      name: "Arto Hellas", 
-      number: "040-123456"
-    },
-    { 
-      id: 2,
-      name: "Ada Lovelace", 
-      number: "39-44-5323523"
-    },
-    { 
-      id: 3,
-      name: "Dan Abramov", 
-      number: "12-43-234345"
-    },
-    { 
-      id: 4,
-      name: "Mary Poppendieck", 
-      number: "39-23-6423122"
-    }
-];
+const {dbConnection} = require("./db/db")
+const {Person} = require("./models/Person")
 
 const unknownRequest = (request,response,next)=>{
     response.status(404).send({error: 'unknown endpoint'})
 }
 
-const generetedId = function(){
-    const random = Math.floor(Math.random() * (1000 - 1)) + 1;
+const errorHandler = (error, request,response,next)=>{
+    console.log(error.message);
 
-    if (phoneNumbers.length >= 5) throw new Error("No hay más IDs disponibles");
-
-    const inArray = phoneNumbers.some(p => p.id === random);
-    console.log(inArray)
-    if(inArray) return generetedId();
-    return random;
+    if(error.name === 'CastError') {
+        return response.status(400).send({ error: 'malformatted id' })
+    }else if(error.name === 'ValidationError') {
+        return response.status(400).json({ error: error.message })
+    }
+  next(error)
 }
 
 app.use(express.json());
-app.use(express.static(join(__dirname, 'dist')));
+app.use(express.static('dist'));
 app.use(cors());
 
 morgan.token('body',(req,res)=>{
@@ -55,10 +33,6 @@ app.use(morgan(":method :url :status :res[content-length] - :response-time ms :b
 
 //REST
 //GET all phone numbers
-
-app.get("/",(request,response)=>{
-    response.send("<h1>Hola mundo</h1>")
-})
 
 app.get("/info",(request,response)=>{
     const date = new Date();
@@ -71,50 +45,87 @@ app.get("/info",(request,response)=>{
 })
 
 app.get("/api/persons",(request,response)=>{
-    response.json(phoneNumbers)
+    Person.find()
+        .then((people)=> response.json(people))
+        .catch((error) => next(error)());
 });
 
-app.get("/api/persons/:id",(request,response)=>{
-    const id = Number(request.params.id);
-    const person = phoneNumbers.find(phone => phone.id === id);
-    
-    if(!person){
-        return response.status(400).json({
-            error:"404 error not found resource"
-        })
-    }
-    response.json(person)
+app.get("/api/persons/:id",(request,response,next)=>{
+    Person.findById(request.params.id)
+        .then((people)=> response.json(people))
+        .catch((error) => next(error));
 });
 
 app.delete("/api/persons/:id",(request,response)=>{
-    const id = Number(request.params.id);
-    phoneNumbers = phoneNumbers.filter(phone => phone.id != id);
-    response.status(204).json(phoneNumbers)
+    Person.findByIdAndDelete(request.params.id)
+        .then((people)=> response.json(people))
+        .catch((err) => next(err));
 });
 
-app.post("/api/persons", (request, response)=>{
+app.put("/api/persons/:id", (request, response, next) => {
+    const { id } = request.params;
     const body = request.body;
 
-    if(!body.name) return response.status(400).json({error:"The name is necessary"});
-    const findName = phoneNumbers.find(p => p.name === body.name);
-    if(findName) return response.status(400).json({error:"The name is exists in the database"});
+    const updatedPerson = {
+        name: body.name,
+        number: body.number
+    };
 
-    if(!body.number) return response.status(400).json({erro:"The number is the most important"});
+    Person.findByIdAndUpdate(id, updatedPerson, {
+        new: true,    
+        runValidators: true,
+        context: "query"
+    })
+    .then(result => {
+        if (!result) {
+            return response.status(404).json({ error: "Person not found" });
+        }
+        response.json(result);
+    })
+    .catch(error => next(error));
+});
 
-    const person = {
-        id: generetedId(),
-        name: String(body.name),
-        number: String(body.number)
+app.post("/api/persons", (request, response, next) => {
+    const body = request.body;
+
+    if (!body.name) {
+        return response.status(400).json({ error: "The name is necessary" });
     }
 
-    phoneNumbers = phoneNumbers.concat(person);
+    if (!body.number) {
+        return response.status(400).json({ error: "The number is the most important" });
+    }
 
-    response.json(person);
-})
+    const person = {
+        name: body.name,
+        number: body.number
+    };
 
-app.use(unknownRequest)
+    // Buscar si ya existe
+    Person.findOne({ name: body.name })
+        .then(result => {
+            if (!result) {
+                // No existe → crear
+                return Person.create(person)
+                    .then(savedPerson => response.json(savedPerson));
+            } else {
+                // Ya existe → actualizar
+                return Person.updateOne(
+                    { name: body.name },
+                    { $set: { number: body.number } }
+                ).then(() => response.json({ message: "Person updated" }));
+            }
+        })
+        .catch(error => next(error));
+});
+
+
+app.use(unknownRequest);
+app.use(errorHandler);
 
 app.listen(port,()=>{
     console.clear();
-    console.log("App initial in a port " + port)
-})
+    console.log("App initial in a port " + port);
+    dbConnection();
+}
+)
