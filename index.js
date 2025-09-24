@@ -34,7 +34,7 @@ app.use(morgan(":method :url :status :res[content-length] - :response-time ms :b
 //REST
 //GET all phone numbers
 
-app.get("/info",(request,response)=>{
+app.get("/info",(request,response,next)=>{
     const date = new Date();
     const template = 
     `
@@ -44,10 +44,10 @@ app.get("/info",(request,response)=>{
     response.send(template);
 })
 
-app.get("/api/persons",(request,response)=>{
+app.get("/api/persons",(request,response,next)=>{
     Person.find()
         .then((people)=> response.json(people))
-        .catch((error) => next(error)());
+        .catch((error) => next(error));
 });
 
 app.get("/api/persons/:id",(request,response,next)=>{
@@ -56,7 +56,7 @@ app.get("/api/persons/:id",(request,response,next)=>{
         .catch((error) => next(error));
 });
 
-app.delete("/api/persons/:id",(request,response)=>{
+app.delete("/api/persons/:id",(request,response,next)=>{
     Person.findByIdAndDelete(request.params.id)
         .then((people)=> response.json(people))
         .catch((err) => next(err));
