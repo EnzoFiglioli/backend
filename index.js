@@ -34,8 +34,9 @@ app.use(morgan(":method :url :status :res[content-length] - :response-time ms :b
 //REST
 //GET all phone numbers
 
-app.get("/info",(request,response,next)=>{
+app.get("/info",async(request,response,next)=>{
     const date = new Date();
+    const phoneNumbers = await Person.find({})
     const template = 
     `
     <p>Phone book has info ${phoneNumbers.length} people</p>
